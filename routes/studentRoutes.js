@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const Student = require("../models/Student");
+const Course = require("../models/Course");
+const Professor = require("../models/Professor");
+const Assistant = require("../models/Assistant");
 const sendEmail = require("../utils/sendEmail");
 
 // 🟢 GET all students
@@ -21,17 +24,14 @@ router.post("/signup", async (req, res) => {
   try {
     const { full_name, email, password, confirm_password, department_id } = req.body;
 
-    // 1️⃣ Check if email already exists
     const existingStudent = await Student.findOne({ email });
     if (existingStudent) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    // 2️⃣ Auto-generate unique student_id
-    const randomNum = Math.floor(1000 + Math.random() * 9000); // 4-digit number
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
     const student_id = `${full_name.substring(0, 3).toUpperCase()}${randomNum}`;
 
-    // 3️⃣ Create new student
     const newStudent = new Student({
       student_id,
       full_name,
@@ -75,7 +75,6 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // 🔑 Create JWT Token
     const token = jwt.sign(
       { id: student._id, email: student.email },
       process.env.JWT_SECRET,
@@ -165,14 +164,11 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    // Create reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
-
     student.resetToken = resetToken;
-    student.resetTokenExpire = Date.now() + 15 * 60 * 1000; // 15 minutes
+    student.resetTokenExpire = Date.now() + 15 * 60 * 1000;
     await student.save();
 
-    // Create frontend reset link
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
     const html = `
       <h2>Password Reset Request</h2>
@@ -183,7 +179,6 @@ router.post("/forgot-password", async (req, res) => {
     `;
 
     await sendEmail(student.email, "Password Reset Request", html);
-
     res.json({ message: "Reset link sent to your email." });
   } catch (error) {
     console.error("Forgot Password Error:", error);
@@ -211,7 +206,6 @@ router.post("/reset-password/:token", async (req, res) => {
     if (!student)
       return res.status(400).json({ message: "Invalid or expired reset token." });
 
-    // Hash new password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
@@ -226,6 +220,92 @@ router.post("/reset-password/:token", async (req, res) => {
   } catch (err) {
     console.error("Reset Password Error:", err);
     res.status(500).json({ message: "Server error, please try again later." });
+  }
+});
+
+
+// NEW FEATURES BELOW 
+
+// ✅ Enroll a student in a course
+router.post("/:id/enroll/:courseId", async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    const course = await Course.findById(req.params.courseId);
+
+    if (!student || !course) {
+      return res.status(404).json({ message: "Student or Course not found" });
+    }
+
+    if (!student.courses.includes(course._id)) {
+      student.courses.push(course._id);
+      course.students.push(student._id);
+      await student.save();
+      await course.save();
+    }
+
+    res.json({ message: "Student enrolled successfully", student });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ✅ Remove a student from a course
+router.delete("/:id/remove-course/:courseId", async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    const course = await Course.findById(req.params.courseId);
+
+    if (!student || !course) {
+      return res.status(404).json({ message: "Student or Course not found" });
+    }
+
+    student.courses = student.courses.filter(c => c.toString() !== course._id.toString());
+    course.students = course.students.filter(s => s.toString() !== student._id.toString());
+
+    await student.save();
+    await course.save();
+
+    res.json({ message: "Student removed from course", student });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ✅ Get all student academic info (courses + professors + assistants)
+router.get("/:id/academic-info", async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id)
+      .populate({
+        path: "courses",
+        populate: [
+          { path: "professors", model: "Professor" },
+          { path: "assistants", model: "Assistant" },
+          { path: "department", model: "Department" }
+        ]
+      })
+      .populate("department_id");
+
+    if (!student) return res.status(404).json({ message: "Student not found" });
+
+    res.json({
+      student: student.full_name,
+      department: student.department_id,
+      courses: student.courses,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+// ✅ Get all students enrolled in a specific course
+router.get("/course/:courseId", async (req, res) => {
+  try {
+    const students = await Student.find({ courses: req.params.courseId })
+      .populate("department_id");
+    res.json(students);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

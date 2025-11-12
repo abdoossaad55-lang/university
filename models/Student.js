@@ -63,9 +63,23 @@ const StudentSchema = new mongoose.Schema({
     },
     resetToken: String,
     resetTokenExpire: Date,
+
+    // ✅ NEW RELATIONSHIPS
+    courses: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Course'          // Student can take multiple courses
+    }],
+    professors: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Professor'       // Professors who teach their courses
+    }],
+    assistants: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Assistant'       // Assistants helping in their courses
+    }]
 });
 
-// Hash password before saving
+// 🔒 Hash password before saving
 StudentSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();
 
@@ -78,7 +92,7 @@ StudentSchema.pre('save', async function (next) {
     }
 });
 
-// Compare password for login
+// 🔑 Compare password for login
 StudentSchema.methods.comparePassword = async function (candidatePassword) {
     return await bcrypt.compare(candidatePassword, this.password);
 };

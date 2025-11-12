@@ -33,6 +33,11 @@ const courseRoutes = require('./routes/courseRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const academicRecordRoutes = require('./routes/academicRecordRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const professorRoutes = require("./routes/professorRoutes");
+const assistantRoutes = require("./routes/assistantRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const courseRoutes = require("./routes/courseRoutes");
+
 
 app.use('/api/students', studentRoutes);
 app.use('/api/departments', departmentRoutes);
@@ -40,6 +45,10 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/records', academicRecordRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use("/api/professors", professorRoutes);
+app.use("/api/assistants", assistantRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/courses", courseRoutes);
 
 // 4️⃣ Test route
 app.get('/', (req, res) => {
