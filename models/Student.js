@@ -1,3 +1,4 @@
+// src/models/Student.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -10,10 +11,9 @@ const StudentSchema = new mongoose.Schema({
     },
     full_name: {
         type: String,
-        required: [true, 'First name is required'],
+        required: [true, 'Full name is required'],
         trim: true
     },
-    
     email: {
         type: String,
         required: [true, 'Email is required'],
@@ -25,76 +25,64 @@ const StudentSchema = new mongoose.Schema({
     phone: {
         type: String,
         trim: true,
-        match: [/^\+?[0-9]{10,15}$/, 'Please enter a valid phone number']
+        match: [/^\+?[0-9]{10,15}$/, 'Please enter a valid phone number'],
     },
     gender: {
         type: String,
         enum: ['Male', 'Female', 'Other']
     },
-    dob: {
-        type: Date
-    },
+    dob: Date,
     department_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Department'
     },
-    address: {
-        type: String,
-        trim: true
-    },
+    address: { type: String, trim: true },
     enrollment_status: {
         type: String,
         enum: ['Active', 'Inactive', 'Graduated', 'Suspended'],
         default: 'Active'
     },
+
+    // authentication
     password: {
         type: String,
         required: [true, 'Password is required'],
-        minlength: [8, 'Password must be at least 8 characters long'],
+        minlength: [8, 'Password must be at least 8 characters']
     },
-    confirm_password: {
-        type: String,
-        required: false,
-        select: false
-    },
-    created_at: {
-        type: Date,
-        default: Date.now
-    },
+
     resetToken: String,
     resetTokenExpire: Date,
 
-    // ✅ NEW RELATIONSHIPS
-    courses: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Course'          // Student can take multiple courses
-    }],
-    professors: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Professor'       // Professors who teach their courses
-    }],
-    assistants: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Assistant'       // Assistants helping in their courses
-    }]
-});
+    courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
+    professors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Professor' }],
+    assistants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Assistant' }],
 
-// 🔒 Hash password before saving
+    year: {
+        type: Number,
+        enum: [1, 2, 3, 4, 5],
+        default: 1
+    },
+    avatar: { 
+        type: String,
+        default: null
+    },
+
+}, { timestamps: true });
+
+
 StudentSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();
-
     try {
         const salt = await bcrypt.genSalt(10);
         this.password = await bcrypt.hash(this.password, salt);
         next();
-    } catch (error) {
-        next(error);
+    } catch (err) {
+        next(err);
     }
-});
+    });
 
-// 🔑 Compare password for login
-StudentSchema.methods.comparePassword = async function (candidatePassword) {
-    return await bcrypt.compare(candidatePassword, this.password);
+    StudentSchema.methods.comparePassword = function (candidatePassword) {
+    return bcrypt.compare(candidatePassword, this.password);
 };
 
 module.exports = mongoose.model('Student', StudentSchema);

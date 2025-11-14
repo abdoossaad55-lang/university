@@ -1,12 +1,12 @@
+// src/models/AcademicRecord.js
 const mongoose = require('mongoose');
 
-const academicRecordSchema = new mongoose.Schema({
-    student_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
-    course_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
+const AcademicRecordSchema = new mongoose.Schema({
+    student_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
+    course_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
+    grade: { type: String }, // e.g. A, B, C or number
     semester: String,
-    grade: String,
-    gpa_points: Number,
-    attendance_percentage: Number
+    year: Number
 }, { timestamps: true });
 
-module.exports = mongoose.model('AcademicRecord', academicRecordSchema);
+module.exports = mongoose.model('AcademicRecord', AcademicRecordSchema);

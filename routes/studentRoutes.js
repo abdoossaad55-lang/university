@@ -1,239 +1,200 @@
-const express = require("express");
+// src/routes/studentRoutes.js
+const express = require('express');
 const router = express.Router();
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
-const Student = require("../models/Student");
-const Course = require("../models/Course");
-const Professor = require("../models/Professor");
-const Assistant = require("../models/Assistant");
-const sendEmail = require("../utils/sendEmail");
+const multer = require('multer');
+const path = require('path');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
-// 🟢 GET all students
-router.get("/", async (req, res) => {
+const Student = require('../models/Student');
+const Course = require('../models/Course');
+const Professor = require('../models/Professor');
+const Assistant = require('../models/Assistant');
+const sendEmail = require('../utils/sendEmail'); // optional
+const auth = require('../middlewares/auth');
+
+// multer storage
+const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
+const avatarDir = path.join(process.cwd(), UPLOAD_DIR, 'avatars');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, avatarDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const name = `${Date.now()}-${Math.round(Math.random()*1e9)}${ext}`;
+    cb(null, name);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png/;
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.test(ext)) cb(null, true);
+    else cb(new Error('Only images are allowed'));
+  }
+});
+
+// helper to create student_id
+const createStudentId = (full_name) => {
+  const letters = full_name.replace(/\s+/g, '').substring(0,3).toUpperCase();
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  return `${letters}${randomNum}`;
+};
+
+// GET all students
+router.get('/', async (req, res) => {
   try {
-    const students = await Student.find().populate("department_id");
+    const students = await Student.find()
+      .populate('department_id', 'dept_name dept_code')
+      .populate({ path: 'courses', populate: ['professors','assistants','department']});
     res.json(students);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// 🟢 POST signup (register new student)
-router.post("/signup", async (req, res) => {
+// SIGNUP - allows optional avatar upload
+router.post('/signup', upload.single('avatar'), async (req, res) => {
   try {
-    const { full_name, email, password, confirm_password, department_id } = req.body;
+    const { full_name, email, password, confirm_password, department_id, year } = req.body;
 
-    const existingStudent = await Student.findOne({ email });
-    if (existingStudent) {
-      return res.status(400).json({ message: "Email already registered" });
+    if (!full_name || !email || !password) {
+      return res.status(400).json({ message: 'full_name, email and password are required' });
+    }
+    if (password !== confirm_password) {
+      return res.status(400).json({ message: 'Passwords do not match' });
     }
 
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const student_id = `${full_name.substring(0, 3).toUpperCase()}${randomNum}`;
+    const existing = await Student.findOne({ email });
+    if (existing) return res.status(400).json({ message: 'Email already registered' });
+
+    const student_id = createStudentId(full_name);
 
     const newStudent = new Student({
       student_id,
       full_name,
       email,
       password,
-      confirm_password,
       department_id,
-      enrollment_status: "Active",
+      enrollment_status: 'Active',
+      year: year ? Number(year) : undefined
     });
+
+    if (req.file) {
+      // store relative path for serving
+      newStudent.avatar = `/uploads/avatars/${req.file.filename}`;
+    }
 
     await newStudent.save();
 
     res.status(201).json({
-      message: "Student registered successfully",
+      message: 'Student registered successfully',
       student: {
         id: newStudent._id,
         student_id: newStudent.student_id,
         full_name: newStudent.full_name,
         email: newStudent.email,
         department_id: newStudent.department_id,
-        enrollment_status: newStudent.enrollment_status,
-      },
+        year: newStudent.year,
+        avatar: newStudent.avatar
+      }
     });
   } catch (err) {
+    console.error('Signup error', err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// 🟢 POST login
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
+// LOGIN
+router.post('/login', async (req, res) => {
   try {
+    const { email, password } = req.body;
     const student = await Student.findOne({ email });
-    if (!student) {
-      return res.status(404).json({ message: "No account found with this email" });
-    }
+    if (!student) return res.status(404).json({ message: 'No account found' });
 
     const isMatch = await student.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const token = jwt.sign(
-      { id: student._id, email: student.email },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = jwt.sign({ id: student._id, email: student.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
-      message: "Login successful",
+      message: 'Login successful',
       student: {
+        id: student._id,
         full_name: student.full_name,
         email: student.email,
-        department: student.department_id,
+        student_id: student.student_id,
         enrollment_status: student.enrollment_status,
+        courses: student.courses,
+        professors: student.professors,
+        assistants: student.assistants,
+        department: student.department_id,
+        year: student.year,
+        avatar: student.avatar
       },
-      token,
+      token
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// 🟢 GET student by ID
-router.get("/:id", async (req, res) => {
+// GET student by id
+router.get('/id/:id', async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id).populate("department_id");
-    if (!student) return res.status(404).json({ message: "Student not found" });
+    const student = await Student.findById(req.params.id)
+      .populate('department_id', 'dept_name dept_code')
+      .populate({ path: 'courses', populate: ['professors','assistants','department']});
+    if (!student) return res.status(404).json({ message: 'Student not found' });
     res.json(student);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// 🟢 POST new student (manual add by admin)
-router.post("/", async (req, res) => {
+// UPDATE student (allow avatar upload)
+router.put('/:id', upload.single('avatar'), async (req, res) => {
   try {
-    const student = new Student(req.body);
-    await student.save();
-    res.status(201).json(student);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
+    const payload = { ...req.body };
 
-// 🟢 PUT update student
-router.put("/:id", async (req, res) => {
-  try {
-    const student = await Student.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!student) return res.status(404).json({ message: "Student not found" });
-    res.json(student);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
+    // don't allow password to be updated this way (unless you want)
+    delete payload.password;
 
-// 🟢 DELETE student
-router.delete("/:id", async (req, res) => {
-  try {
-    const student = await Student.findByIdAndDelete(req.params.id);
-    if (!student) return res.status(404).json({ message: "Student not found" });
-    res.json({ message: "Student deleted" });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// 🧹 DELETE all students (admin)
-router.delete("/", async (req, res) => {
-  try {
-    const result = await Student.deleteMany({});
-    res.json({
-      message: "All students deleted successfully",
-      deletedCount: result.deletedCount,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// 🟢 POST /api/students/forgot-password
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const student = await Student.findOne({ email });
-
-    if (!student) {
-      return res.status(404).json({ message: "Student not found" });
+    if (req.file) {
+      payload.avatar = `/uploads/avatars/${req.file.filename}`;
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    student.resetToken = resetToken;
-    student.resetTokenExpire = Date.now() + 15 * 60 * 1000;
-    await student.save();
+    const updated = await Student.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true })
+      .populate('department_id', 'dept_name dept_code');
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    const html = `
-      <h2>Password Reset Request</h2>
-      <p>Hello ${student.full_name},</p>
-      <p>Click the link below to reset your password:</p>
-      <a href="${resetLink}" target="_blank">Reset Password</a>
-      <p>This link will expire in 15 minutes.</p>
-    `;
-
-    await sendEmail(student.email, "Password Reset Request", html);
-    res.json({ message: "Reset link sent to your email." });
-  } catch (error) {
-    console.error("Forgot Password Error:", error);
-    res.status(500).json({ message: "Something went wrong." });
-  }
-});
-
-// 🟢 POST /api/students/reset-password/:token
-router.post("/reset-password/:token", async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { newPassword, confirmPassword } = req.body;
-
-    if (!newPassword || !confirmPassword)
-      return res.status(400).json({ message: "Please provide both newPassword and confirmPassword." });
-
-    if (newPassword !== confirmPassword)
-      return res.status(400).json({ message: "Passwords do not match." });
-
-    const student = await Student.findOne({
-      resetToken: token,
-      resetTokenExpire: { $gt: Date.now() },
-    });
-
-    if (!student)
-      return res.status(400).json({ message: "Invalid or expired reset token." });
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    student.password = hashedPassword;
-    student.confirm_password = hashedPassword;
-    student.resetToken = undefined;
-    student.resetTokenExpire = undefined;
-
-    await student.save();
-
-    res.json({ message: "Password has been reset successfully." });
+    if (!updated) return res.status(404).json({ message: 'Student not found' });
+    res.json(updated);
   } catch (err) {
-    console.error("Reset Password Error:", err);
-    res.status(500).json({ message: "Server error, please try again later." });
+    res.status(400).json({ message: err.message });
   }
 });
 
+// DELETE student
+router.delete('/:id', async (req, res) => {
+  try {
+    const removed = await Student.findByIdAndDelete(req.params.id);
+    if (!removed) return res.status(404).json({ message: 'Student not found' });
+    // optionally remove references in courses
+    await Course.updateMany({ students: removed._id }, { $pull: { students: removed._id }});
+    res.json({ message: 'Student deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
-// NEW FEATURES BELOW 
-
-// ✅ Enroll a student in a course
-router.post("/:id/enroll/:courseId", async (req, res) => {
+// Enroll and remove same as before (kept)
+router.post('/:id/enroll/:courseId', async (req, res) => {
   try {
     const student = await Student.findById(req.params.id);
     const course = await Course.findById(req.params.courseId);
-
-    if (!student || !course) {
-      return res.status(404).json({ message: "Student or Course not found" });
-    }
+    if (!student || !course) return res.status(404).json({ message: 'Student or Course not found' });
 
     if (!student.courses.includes(course._id)) {
       student.courses.push(course._id);
@@ -241,51 +202,42 @@ router.post("/:id/enroll/:courseId", async (req, res) => {
       await student.save();
       await course.save();
     }
-
-    res.json({ message: "Student enrolled successfully", student });
+    res.json({ message: 'Student enrolled successfully', student });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ Remove a student from a course
-router.delete("/:id/remove-course/:courseId", async (req, res) => {
+router.delete('/:id/remove-course/:courseId', async (req, res) => {
   try {
     const student = await Student.findById(req.params.id);
     const course = await Course.findById(req.params.courseId);
-
-    if (!student || !course) {
-      return res.status(404).json({ message: "Student or Course not found" });
-    }
+    if (!student || !course) return res.status(404).json({ message: 'Student or Course not found' });
 
     student.courses = student.courses.filter(c => c.toString() !== course._id.toString());
     course.students = course.students.filter(s => s.toString() !== student._id.toString());
-
     await student.save();
     await course.save();
-
-    res.json({ message: "Student removed from course", student });
+    res.json({ message: 'Student removed from course', student });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ Get all student academic info (courses + professors + assistants)
-router.get("/:id/academic-info", async (req, res) => {
+// academic-info route
+router.get('/:id/academic-info', async (req, res) => {
   try {
     const student = await Student.findById(req.params.id)
       .populate({
-        path: "courses",
+        path: 'courses',
         populate: [
-          { path: "professors", model: "Professor" },
-          { path: "assistants", model: "Assistant" },
-          { path: "department", model: "Department" }
+          { path: 'professors', model: 'Professor' },
+          { path: 'assistants', model: 'Assistant' },
+          { path: 'department', model: 'Department' }
         ]
       })
-      .populate("department_id");
-
-    if (!student) return res.status(404).json({ message: "Student not found" });
-
+      .populate('department_id');
+    if (!student) return res.status(404).json({ message: 'Student not found' });
     res.json({
       student: student.full_name,
       department: student.department_id,
@@ -296,12 +248,10 @@ router.get("/:id/academic-info", async (req, res) => {
   }
 });
 
-
-// ✅ Get all students enrolled in a specific course
-router.get("/course/:courseId", async (req, res) => {
+// list by course
+router.get('/course/:courseId', async (req, res) => {
   try {
-    const students = await Student.find({ courses: req.params.courseId })
-      .populate("department_id");
+    const students = await Student.find({ courses: req.params.courseId }).populate('department_id');
     res.json(students);
   } catch (err) {
     res.status(500).json({ message: err.message });
