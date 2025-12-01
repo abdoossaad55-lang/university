@@ -92,17 +92,28 @@ async function login(req, res) {
     if (vErr) return error(res, vErr.details[0].message, 400);
 
     const { email, password } = req.body;
-    const prof = await Professor.findOne({ email: email.toLowerCase() }).populate('departments courses');
-    if (!prof) return error(res, 'No account found', 404);
+
+    // Fetch professor & populate related fields
+    const prof = await Professor.findOne({ email: email.toLowerCase() })
+      .populate("departments")
+      .populate("courses");
+
+    if (!prof) return error(res, "No account found", 404);
 
     if (prof.lockedUntil && new Date() < new Date(prof.lockedUntil))
-      return error(res, 'Account temporarily locked due to failed login attempts', 403);
+      return error(res, "Account temporarily locked due to failed login attempts", 403);
 
     const isMatch = await prof.comparePassword(password);
 
+    // Log attempt
     prof.loginHistory = prof.loginHistory || [];
-    prof.loginHistory.push({ ip: req.ip, userAgent: req.headers['user-agent'], success: !!isMatch });
+    prof.loginHistory.push({
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      success: !!isMatch,
+    });
 
+    // Handle failed login
     if (!isMatch) {
       prof.loginAttempts = (prof.loginAttempts || 0) + 1;
       if (prof.loginAttempts >= 5) {
@@ -110,21 +121,40 @@ async function login(req, res) {
         prof.loginAttempts = 0;
       }
       await prof.save();
-      return error(res, 'Invalid credentials', 401);
+      return error(res, "Invalid credentials", 401);
     }
 
+    // Success → reset lock
     prof.loginAttempts = 0;
     prof.lockedUntil = null;
     await prof.save();
 
-    const accessToken = generateAccessToken({ id: prof._id.toString(), role: 'professor', email: prof.email });
-    const refreshToken = generateRefreshToken({ id: prof._id.toString(), role: 'professor', email: prof.email });
+    // Generate tokens
+    const accessToken = generateAccessToken({ id: prof.id, role: "professor", email: prof.email });
+    const refreshToken = generateRefreshToken({ id: prof.id, role: "professor", email: prof.email });
     await prof.addRefreshToken(refreshToken);
 
-    success(res, { professor: prof, tokens: { accessToken, refreshToken } }, 'Login successful');
+    // Build formatted response
+    const formattedProfessor = {
+      id: prof.id,
+      full_name: prof.full_name,
+      email: prof.email,
+      departments: prof.departments?.map(d => d._id),
+      courses: prof.courses?.map(c => c._id),
+      avatar: prof.avatar,
+      office: prof.office,
+      phone: prof.phone
+    };
+
+    return res.status(200).json({
+      message: "Login successful",
+      professor: formattedProfessor,
+      token: accessToken
+    });
+
   } catch (err) {
-    console.error('Login error', err);
-    error(res, 'Server error', 500);
+    console.error("Login error:", err);
+    return error(res, "Server error", 500);
   }
 }
 

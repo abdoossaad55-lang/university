@@ -102,54 +102,57 @@ async function login(req, res) {
     const { error: vErr } = loginSchema.validate(req.body);
     if (vErr) return error(res, vErr.details[0].message, 400);
 
-    const student = await Student.findOne({ email: req.body.email.toLowerCase() });
+    const student = await Student.findOne({ email: req.body.email.toLowerCase() })
+      .populate("courses")
+      .populate("professors")
+      .populate("assistants")
+      .populate("department_id"); // populate department info if needed
+
     if (!student) return error(res, "Invalid email or password", 401);
 
-    // Account lock check
     if (student.lockedUntil && Date.now() < student.lockedUntil)
       return error(res, "Account locked - try again later", 403);
 
     const match = await student.comparePassword(req.body.password);
-
     if (!match) {
       student.loginAttempts = (student.loginAttempts || 0) + 1;
       if (student.loginAttempts >= 5) {
-        student.lockedUntil = Date.now() + 15 * 60 * 1000; // 15 minutes
+        student.lockedUntil = Date.now() + 15 * 60 * 1000;
         student.loginAttempts = 0;
       }
       await student.save();
       return error(res, "Invalid email or password", 401);
     }
 
-    // successful login resets counters
     student.loginAttempts = 0;
     student.lockedUntil = null;
     await student.save();
 
-    // Use full mongoose doc to generate tokens (ensures role/id are consistent)
-    const accessToken = generateAccessToken(student);
-    const refreshToken = generateRefreshToken(student);
+    const token = generateAccessToken(student);
 
-    await student.addRefreshToken(refreshToken);
-
-    // return sanitized student (no password, no refresh tokens)
-    const safeStudent = {
-      id: student.id,
-      student_id: student.student_id,
-      full_name: student.full_name,
-      email: student.email,
-      avatar: student.avatar,
-      year: student.year,
-      department_id: student.department_id
+    // 🔥 Build final formatted response
+    const formattedStudent = {
+      id:          student.id,
+      full_name:   student.full_name,
+      email:       student.email,
+      student_id:  student.student_id,
+      enrollment_status: student.enrollment_status ?? "Active", // if exists in schema
+      courses:     student.courses?.map(c => c._id),
+      professors:  student.professors?.map(p => p._id),
+      assistants:  student.assistants?.map(a => a._id),
+      department:  student.department_id?._id ?? student.department_id,
+      year:        student.year,
+      avatar:      student.avatar
     };
 
-    success(res, {
-      student: safeStudent,
-      tokens: { accessToken, refreshToken }
-    }, "Login successful");
+    return res.status(200).json({
+      message: "Login successful",
+      student: formattedStudent,
+      token: token
+    });
 
   } catch (err) {
-    console.error('Login error:', err);
+    console.error("Login error:", err);
     return error(res, "Server Error", 500);
   }
 }
