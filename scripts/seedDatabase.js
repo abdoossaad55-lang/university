@@ -36,16 +36,20 @@ async function seedDatabase() {
 
     // Professors
     const professors = [];
-    for (let i = 1; i <= 6; i++) {
-      professors.push({
-        name: `Prof${i} Name`,
-        email: `prof${i}@university.edu`,
-        phone: `+2010000${100 + i}`,
-        title: 'Dr.',
-        departments: [departments[i % departments.length]._id],
-        courses: [courses[i % courses.length]._id]
-      });
-    }
+    const saltProf = await bcrypt.genSalt(10);
+    const hashedProfPassword = await bcrypt.hash("password123", saltProf);
+
+      for (let i = 1; i <= 6; i++) {
+        professors.push({
+          name: `Prof${i} Name`,
+          email: `prof${i}@university.edu`,
+          phone: `+2010000${100 + i}`,
+          title: 'Dr.',
+          departments: [departments[i % departments.length]._id],
+          courses: [courses[i % courses.length]._id],
+          password: hashedProfPassword   // FIXED
+        });
+      }
     const profDocs = await Professor.insertMany(professors);
 
     // Assistants

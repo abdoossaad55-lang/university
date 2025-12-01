@@ -16,6 +16,10 @@ const assistantRoutes = require('./routes/assistantRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const academicRecordRoutes = require('./routes/academicRecordRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
+const slidesRoutes = require('./routes/slidesRoutes');
+const notificationsRoutes = require('./routes/notificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -26,9 +30,10 @@ connectDB();
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// app.use("/uploads", express.static("uploads"));
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:3000'
+  process.env.FRONTEND_URL || 'http://localhost:5000'
 ];
 
 app.use(cors({
@@ -45,12 +50,16 @@ app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOAD
 // Routes
 app.use('/api/students', studentRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/professors', professorRoutes);
 app.use('/api/assistants', assistantRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/records', academicRecordRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/assignments', assignmentRoutes);
+app.use('/api/slides', slidesRoutes);
+app.use("/api/notifications", notificationsRoutes);
 
 // Health check
 app.get('/', (req, res) => res.send('Faculty Management API running ✅'));

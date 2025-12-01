@@ -1,58 +1,72 @@
 const express = require('express');
 const router = express.Router();
-const Professor = require('../models/Professor');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs-extra');
 
-// ✅ Add professor
-router.post('/', async (req, res) => {
-    try {
-        const prof = await Professor.create(req.body);
-        res.status(201).json(prof);
-    } catch (error) {
-        res.status(400).json({ message: error.message });
-    }
+const professorController = require('../controllers/professorController');
+const professorAuth = require('../middlewares/professorAuth');
+const adminAuth = require('../middlewares/adminAuth');
+const Professor = require("../models/Professor");
+
+// Ensure upload directory exists
+const uploadDir = path.join(process.cwd(), 'uploads/professors');
+fs.ensureDirSync(uploadDir);
+
+// Multer setup for avatar upload
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
 });
+const upload = multer({ storage });
 
-// ✅ Get all professors with related data
-router.get('/', async (req, res) => {
-    try {
-        const profs = await Professor.find()
-        .populate('departments')
-        .populate('courses');
-        res.json(profs);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
+// ------------------------------
+// AUTH ROUTES
+// ------------------------------
+router.post('/signup', upload.single('avatar'), professorController.signup);
+router.post('/login', professorController.login);
+router.post('/refresh-token', professorController.refreshToken);
+router.post('/logout', professorAuth, professorController.logout);
+router.post('/forgot-password', professorController.forgotPassword);
+router.post('/reset-password', professorController.resetPassword);
 
-// ✅ Get single professor
-router.get('/:id', async (req, res) => {
-    try {
-        const prof = await Professor.findById(req.params.id)
-        .populate('departments courses');
-        if (!prof) return res.status(404).json({ message: 'Professor not found' });
-        res.json(prof);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
+// ------------------------------
+// PROFILE ROUTES
+// ------------------------------
+router.get('/me', professorAuth, professorController.me);
+router.put('/me', professorAuth, upload.single('avatar'), professorController.updateProfile);
+router.patch('/me/change-password', professorAuth, professorController.changePassword);
+router.delete('/me', professorAuth, professorController.removeProfessor);
 
-// ✅ Update professor
-router.put('/:id', async (req, res) => {
-    try {
-        const updated = await Professor.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        res.json(updated);
-    } catch (error) {
-        res.status(400).json({ message: error.message });
-    }
-});
+// ------------------------------
+// ADMIN-ONLY ROUTES
+// ------------------------------
+router.get('/', professorAuth, adminAuth, professorController.listProfessors);
+router.patch('/courses/assign', professorAuth, professorController.assignCourses);
 
-// ✅ Delete professor
-router.delete('/:id', async (req, res) => {
+// ------------------------------
+// COURSES & GRADES ROUTES
+// ------------------------------
+router.post('/grades', professorAuth, professorController.submitGrades);
+router.post('/courses/grades-by-name', professorAuth, professorController.submitGradesByName);
+router.post('/courses/students', professorAuth, professorController.getStudentsInCourse);
+router.get('/dashboard', professorAuth, professorController.dashboard);
+
+router.get("/courses", professorAuth, async (req, res) => {
     try {
-        await Professor.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Professor deleted' });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+        const professor = await Professor.findById(req.user.id)
+            .populate("courses", "name code description");
+
+        if (!professor) return res.status(404).json({ success: false, message: "Professor not found" });
+
+        res.json({
+            success: true,
+            message: "Courses fetched successfully",
+            data: professor.courses
+        });
+    } catch (err) {
+        console.error("Fetch professor courses error:", err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

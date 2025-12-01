@@ -1,20 +1,25 @@
-const express = require('express');
+// src/routes/attendanceRoutes.js
+const express = require("express");
 const router = express.Router();
-const Attendance = require('../models/Attendance');
+const professorAuth = require("../middlewares/professorAuth");
+const studentAuth = require("../middlewares/studentAuth");
+const adminAuth = require("../middlewares/adminAuth");
+const attendanceController = require("../controllers/attendanceController");
 
-router.get('/', async (req, res) => {
-    const data = await Attendance.find().populate('student_id course_id');
-    res.json(data);
-});
+// ----------------------
+// PROFESSOR MARK ATTENDANCE
+// ----------------------
+router.post("/mark", professorAuth, attendanceController.markAttendance);
 
-router.post('/', async (req, res) => {
-    try {
-        const record = new Attendance(req.body);
-        await record.save();
-        res.status(201).json(record);
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
-});
+// ----------------------
+// VIEW ATTENDANCE BY COURSE (Professor/Admin)
+// ----------------------
+router.get("/course", professorAuth, attendanceController.getAttendanceByCourse);
+router.get("/course/admin", adminAuth, attendanceController.getAttendanceByCourse);
+
+// ----------------------
+// STUDENT VIEW THEIR OWN ATTENDANCE
+// ----------------------
+router.get("/me", studentAuth, attendanceController.getStudentAttendance);
 
 module.exports = router;
