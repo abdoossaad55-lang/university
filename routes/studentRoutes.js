@@ -28,6 +28,7 @@ router.post('/forgot-password', studentController.forgotPassword);
 router.post('/reset-password', studentController.resetPassword);
 
 // Protected Student routes
+router.post('/courses', studentAuth, studentController.myCourses);
 router.get('/me', studentAuth, studentController.me);
 router.put('/me', studentAuth, upload.single('avatar'), studentController.updateProfile);
 router.post('/change-password', studentAuth, studentController.changePassword);

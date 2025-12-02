@@ -6,36 +6,67 @@ const Student = require("../models/Student");
 // ----------------------
 // PROFESSOR: MARK ATTENDANCE
 // ----------------------
+// ----------------------
+// PROFESSOR: MARK ATTENDANCE (with student_name validation)
+// ----------------------
 exports.markAttendance = async (req, res) => {
-    try {
-        const { courseId, date, attendanceList } = req.body;
+  try {
+    const { courseId, date, attendanceList } = req.body;
 
-        if (!courseId || !date || !attendanceList || !Array.isArray(attendanceList))
-            return res.status(400).json({ success: false, message: "courseId, date, and attendanceList are required" });
+    if (!courseId || !date || !attendanceList || !Array.isArray(attendanceList))
+      return res.status(400).json({ success: false, message: "courseId, date, and attendanceList are required" });
 
-        const course = await Course.findById(courseId);
-        if (!course) return res.status(404).json({ success: false, message: "Course not found" });
+    const course = await Course.findById(courseId).populate("students", "_id full_name");
+    if (!course) return res.status(404).json({ success: false, message: "Course not found" });
 
-        // Check professor teaches the course
-        if (!course.professors.includes(req.user.id))
-            return res.status(403).json({ success: false, message: "You are not assigned to this course" });
+    // Check professor teaches the course
+    if (!course.professors.includes(req.user.id))
+      return res.status(403).json({ success: false, message: "You are not assigned to this course" });
 
-        const bulkOps = attendanceList.map(({ studentId, status }) => ({
-            updateOne: {
-                filter: { course: courseId, student: studentId, date },
-                update: { status, markedBy: req.user.id },
-                upsert: true
-            }
-        }));
+    const invalidStudents = [];
+    const bulkOps = [];
 
-        await Attendance.bulkWrite(bulkOps);
+    for (const { studentId, student_name, status } of attendanceList) {
+      if (!studentId || !student_name || !status) {
+        invalidStudents.push({ studentId, student_name, reason: "Missing required field" });
+        continue;
+      }
 
-        res.json({ success: true, message: "Attendance recorded successfully" });
-    } catch (err) {
-        console.error("markAttendance error:", err);
-        res.status(500).json({ success: false, message: err.message });
+      // Validate student exists in the course
+      const student = course.students.find(
+        s => s._id.toString() === studentId && s.full_name.toLowerCase() === student_name.toLowerCase()
+      );
+
+      if (!student) {
+        invalidStudents.push({ studentId, student_name, reason: "Student not enrolled in course or name mismatch" });
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { course: courseId, student: studentId, date },
+          update: { status, markedBy: req.user.id },
+          upsert: true
+        }
+      });
     }
+
+    if (bulkOps.length > 0) {
+      await Attendance.bulkWrite(bulkOps);
+    }
+
+    res.json({
+      success: true,
+      message: "Attendance recorded successfully",
+      processed: bulkOps.length,
+      invalidStudents
+    });
+  } catch (err) {
+    console.error("markAttendance error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
+
 
 // ----------------------
 // PROFESSOR/ADMIN: VIEW ATTENDANCE BY COURSE

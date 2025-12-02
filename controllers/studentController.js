@@ -446,6 +446,39 @@ async function enrollCourse(req, res) {
     return error(res, "Server Error", 500);
   }
 }
+// ==========================================================
+// GET MY COURSES (STUDENT BASED ON TOKEN)
+// ==========================================================
+async function myCourses(req, res) {
+  try {
+    if (!req.user || !req.user.id)
+      return error(res, "Unauthorized", 401);
+
+    const student = await Student.findById(req.user.id)
+      .populate({
+        path: "courses",
+        select: "name code description credits professors assistants",
+        populate: [
+          { path: "professors", select: "full_name email" },
+          { path: "assistants", select: "full_name email" }
+        ]
+      });
+
+    if (!student)
+      return error(res, "Student not found", 404);
+
+    success(res, {
+      student_id: student.student_id,
+      full_name: student.full_name,
+      courses: student.courses
+    }, "Courses fetched successfully");
+
+  } catch (err) {
+    console.error("MyCourses error:", err);
+    return error(res, "Server Error", 500);
+  }
+}
+
 
 // ==========================================================
 // REMOVE COURSE
@@ -531,5 +564,6 @@ module.exports = {
   enrollCourse,
   removeCourse,
   getGrades,
-  dashboard
+  dashboard,
+  myCourses
 };

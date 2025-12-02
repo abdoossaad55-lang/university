@@ -1,3 +1,28 @@
+// ==============================
+// EXPORT
+module.exports = {
+  signup,
+  login,
+  refreshToken,
+  logout,
+  forgotPassword,
+  resetPassword,
+  me,
+  updateProfile,
+  changePassword,
+  removeProfessor,
+  listProfessors,
+  dashboard,
+  assignCourses,
+  submitGrades,       // batch grading by studentId array
+  submitGradeById,    // single grading by studentId
+  getStudentsInCourse,
+  getMyCourses,
+  submitGradesByIdAndName
+};
+
+
+
 const fs = require('fs-extra');
 const path = require('path');
 const crypto = require('crypto');
@@ -93,65 +118,20 @@ async function login(req, res) {
 
     const { email, password } = req.body;
 
-    // Fetch professor & populate related fields
     const prof = await Professor.findOne({ email: email.toLowerCase() })
       .populate("departments")
       .populate("courses");
 
     if (!prof) return error(res, "No account found", 404);
 
-    if (prof.lockedUntil && new Date() < new Date(prof.lockedUntil))
-      return error(res, "Account temporarily locked due to failed login attempts", 403);
-
     const isMatch = await prof.comparePassword(password);
+    if (!isMatch) return error(res, "Invalid credentials", 401);
 
-    // Log attempt
-    prof.loginHistory = prof.loginHistory || [];
-    prof.loginHistory.push({
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-      success: !!isMatch,
-    });
-
-    // Handle failed login
-    if (!isMatch) {
-      prof.loginAttempts = (prof.loginAttempts || 0) + 1;
-      if (prof.loginAttempts >= 5) {
-        prof.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
-        prof.loginAttempts = 0;
-      }
-      await prof.save();
-      return error(res, "Invalid credentials", 401);
-    }
-
-    // Success → reset lock
-    prof.loginAttempts = 0;
-    prof.lockedUntil = null;
-    await prof.save();
-
-    // Generate tokens
     const accessToken = generateAccessToken({ id: prof.id, role: "professor", email: prof.email });
     const refreshToken = generateRefreshToken({ id: prof.id, role: "professor", email: prof.email });
     await prof.addRefreshToken(refreshToken);
 
-    // Build formatted response
-    const formattedProfessor = {
-      id: prof.id,
-      full_name: prof.full_name,
-      email: prof.email,
-      departments: prof.departments?.map(d => d._id),
-      courses: prof.courses?.map(c => c._id),
-      avatar: prof.avatar,
-      office: prof.office,
-      phone: prof.phone
-    };
-
-    return res.status(200).json({
-      message: "Login successful",
-      professor: formattedProfessor,
-      token: accessToken
-    });
-
+    success(res, { professor: prof, token: accessToken }, "Login successful");
   } catch (err) {
     console.error("Login error:", err);
     return error(res, "Server error", 500);
@@ -194,17 +174,15 @@ async function logout(req, res) {
   try {
     const prof = await Professor.findById(req.user.id);
     if (!prof) return error(res, 'Professor not found', 404);
-
-    const { refreshToken } = req.body || {};
-    if (refreshToken) await prof.removeRefreshToken(refreshToken);
-    else await prof.clearRefreshTokens();
-
+    await prof.clearRefreshTokens();
     success(res, null, 'Logged out successfully');
   } catch (err) {
     console.error('Logout error', err);
     error(res, 'Server error', 500);
   }
 }
+
+
 
 // ==============================
 // FORGOT PASSWORD
@@ -321,7 +299,7 @@ async function changePassword(req, res) {
 }
 
 // ==============================
-// SOFT DELETE PROFESSOR
+// REMOVE PROFESSOR (soft delete)
 async function removeProfessor(req, res) {
   try {
     const prof = await Professor.findById(req.user.id);
@@ -339,7 +317,7 @@ async function removeProfessor(req, res) {
 }
 
 // ==============================
-// LIST PROFESSORS (admin)
+// LIST PROFESSORS (Admin)
 async function listProfessors(req, res) {
   try {
     const { page = 1, limit = 20, search, department } = req.query;
@@ -402,10 +380,13 @@ async function assignCourses(req, res) {
     prof.courses = Array.from(new Set([...(prof.courses || []), ...courseIds]));
     await prof.save();
 
-    await Course.updateMany({ _id: { $in: courseIds } }, { $addToSet: { professors: prof._id } });
 
+    await Course.updateMany({ _id: { $in: courseIds } }, { $addToSet: { professors: prof._id } });
+    
     const courses = await Course.find({ _id: { $in: courseIds } });
-    await Promise.all(courses.map(c => Student.updateMany({ _id: { $in: c.students } }, { $addToSet: { professors: prof._id } })));
+    await Promise.all(courses.map(c =>
+      Student.updateMany({ _id: { $in: c.students } }, { $addToSet: { professors: prof._id } })
+    ));
 
     success(res, { assignedCourses: courseIds }, 'Courses assigned successfully');
   } catch (err) {
@@ -415,28 +396,130 @@ async function assignCourses(req, res) {
 }
 
 // ==============================
-// SUBMIT GRADES (by student id)
+// SUBMIT GRADES (Batch by studentId array)
 async function submitGrades(req, res) {
   try {
     const { courseId, grades } = req.body;
-    if (!courseId || !Array.isArray(grades)) return error(res, 'Invalid input', 400);
+    if (!courseId || !Array.isArray(grades) || grades.length === 0)
+      return error(res, "courseId and grades array required", 400);
 
-    const course = await Course.findById(courseId);
-    if (!course) return error(res, 'Course not found', 404);
+    const course = await Course.findById(courseId).populate("students", "_id full_name");
+    if (!course) return error(res, "Course not found", 404);
+    if (!course.professors.includes(req.user.id))
+      return error(res, "Not assigned to this course", 403);
 
-    if (!course.professors.includes(req.user.id)) return error(res, 'Not assigned to this course', 403);
+    const enrolledIds = new Set(course.students.map(s => s._id.toString()));
 
-    course.grades = grades.map(g => ({ student: g.student, professor: req.user.id, grade: g.grade }));
+    const gradeDocs = [];
+    const invalidStudents = [];
+    const missingStudentIds = [];
+
+    for (const g of grades) {
+      if (!g.studentId) {
+        missingStudentIds.push({ entry: g, message: "Missing studentId" });
+        continue;
+      }
+      const sid = g.studentId.toString();
+      if (!enrolledIds.has(sid)) {
+        invalidStudents.push(sid);
+        continue;
+      }
+      gradeDocs.push({ student: sid, professor: req.user.id, grade: g.grade });
+      await Student.findByIdAndUpdate(sid, { $push: { grades: { course: courseId, grade: g.grade, professor: req.user.id } } });
+    }
+
+    if (gradeDocs.length > 0) {
+      course.grades.push(...gradeDocs);
+      await course.save();
+    }
+
+    success(res, { submitted: gradeDocs.length, invalidStudents, missingStudentIds }, "Grades processed successfully");
+  } catch (err) {
+    console.error("Submit grades error:", err);
+    error(res, "Server error", 500);
+  }
+}
+
+// ==============================
+// SUBMIT GRADES (Batch by ID + Name)
+async function submitGradesByIdAndName(req, res) {
+  try {
+    const { courseId, grades } = req.body;
+    if (!courseId || !Array.isArray(grades) || grades.length === 0)
+      return error(res, "courseId and grades array required", 400);
+
+    const course = await Course.findById(courseId).populate("students", "_id full_name");
+    if (!course) return error(res, "Course not found", 404);
+    if (!course.professors.includes(req.user.id))
+      return error(res, "Not assigned to this course", 403);
+
+    const gradeDocs = [];
+    const invalidStudents = [];
+    const missingInfo = [];
+
+    for (const g of grades) {
+      if (!g.studentId || !g.name) {
+        missingInfo.push({ entry: g, message: "Both studentId and name are required" });
+        continue;
+      }
+
+      const student = course.students.find(s =>
+        s._id.toString() === g.studentId.toString() &&
+        s.full_name.toLowerCase() === g.name.toLowerCase()
+      );
+
+      if (!student) {
+        invalidStudents.push({ studentId: g.studentId, name: g.name });
+        continue;
+      }
+
+      gradeDocs.push({ student: student._id, professor: req.user.id, grade: g.grade });
+      await Student.findByIdAndUpdate(student._id, {
+        $push: { grades: { course: courseId, grade: g.grade, professor: req.user.id } }
+      });
+    }
+
+    if (gradeDocs.length > 0) {
+      course.grades.push(...gradeDocs);
+      await course.save();
+    }
+
+    success(res, { submitted: gradeDocs.length, invalidStudents, missingInfo }, "Grades processed successfully");
+  } catch (err) {
+    console.error("Submit grades by ID and Name error:", err);
+    error(res, "Server error", 500);
+  }
+}
+
+// ==============================
+// SUBMIT SINGLE GRADE BY ID
+async function submitGradeById(req, res) {
+  try {
+    const { courseId, studentId, grade } = req.body;
+    if (!courseId || !studentId || grade === undefined)
+      return error(res, "courseId, studentId and grade are required", 400);
+
+    const course = await Course.findById(courseId).populate("students", "_id full_name");
+    if (!course) return error(res, "Course not found", 404);
+    if (!course.professors.includes(req.user.id))
+      return error(res, "Not assigned to this course", 403);
+
+    const enrolledIds = new Set(course.students.map(s => s._id.toString()));
+    if (!enrolledIds.has(studentId))
+      return error(res, "Student not enrolled in this course", 400);
+
+    const gradeDoc = { student: studentId, professor: req.user.id, grade };
+    course.grades.push(gradeDoc);
     await course.save();
 
-    await Promise.all(grades.map(g =>
-      Student.findByIdAndUpdate(g.student, { $push: { grades: { course: courseId, grade: g.grade, professor: req.user.id } } })
-    ));
+    await Student.findByIdAndUpdate(studentId, {
+      $push: { grades: { course: courseId, grade, professor: req.user.id } }
+    });
 
-    success(res, null, 'Grades submitted successfully');
+    success(res, { submitted: 1, studentId }, "Grade submitted successfully");
   } catch (err) {
-    console.error('Submit grades error', err);
-    error(res, 'Server error', 500);
+    console.error("Submit grade by ID error:", err);
+    error(res, "Server error", 500);
   }
 }
 
@@ -449,8 +532,8 @@ async function getStudentsInCourse(req, res) {
 
     const course = await Course.findById(courseId).populate('students', 'student_id full_name');
     if (!course) return error(res, 'Course not found', 404);
-
-    if (!course.professors.includes(req.user.id)) return error(res, 'Not assigned to this course', 403);
+    if (!course.professors.includes(req.user.id))
+      return error(res, 'Not assigned to this course', 403);
 
     success(res, course.students, 'Students retrieved successfully');
   } catch (err) {
@@ -460,52 +543,30 @@ async function getStudentsInCourse(req, res) {
 }
 
 // ==============================
-// SUBMIT GRADES BY NAME
-async function submitGradesByName(req, res) {
+// GET MY COURSES (professor)
+async function getMyCourses(req, res) {
   try {
-    const { courseId, grades } = req.body;
-    if (!courseId) return error(res, 'courseId is required', 400);
-    if (!Array.isArray(grades) || grades.length === 0) return error(res, 'grades must be a non-empty array', 400);
+    const professor = await Professor.findById(req.user.id)
+      .populate("courses", "name code description students"); // populate students if needed
 
-    const course = await Course.findById(courseId).populate('students', 'full_name');
-    if (!course) return error(res, 'Course not found', 404);
-    if (!course.professors.includes(req.user.id)) return error(res, 'Not assigned to this course', 403);
+    if (!professor) return error(res, "Professor not found", 404);
 
-    const studentMap = {};
-    course.students.forEach(s => { studentMap[s.full_name] = s._id; });
-
-    const gradeDocs = [];
-    const unknownNames = [];
-    const missingNameEntries = [];
-
-    await Promise.all(grades.map(async (g, i) => {
-      if (!g.name) { missingNameEntries.push({ index: i, message: 'Missing student name' }); return; }
-      const studentId = studentMap[g.name];
-      if (!studentId) { unknownNames.push(g.name); return; }
-
-      gradeDocs.push({ student: studentId, professor: req.user.id, grade: g.grade });
-      await Student.findByIdAndUpdate(studentId, { $push: { grades: { course: courseId, grade: g.grade, professor: req.user.id } } });
-    }));
-
-    if (gradeDocs.length > 0) {
-      course.grades.push(...gradeDocs);
-      await course.save();
-    }
-
-    success(res, { submitted: gradeDocs.length, missingNames: missingNameEntries, unknownStudents: unknownNames }, 'Grades processed');
+    success(res, professor.courses, "Courses taught fetched successfully");
   } catch (err) {
-    console.error('Submit grades by name error:', err);
-    error(res, 'Server error', 500);
+    console.error("Get my courses error:", err);
+    error(res, "Server error", 500);
   }
 }
 
+// ==============================
+// EXPORT CONTROLLER
 module.exports = {
   signup,
   login,
   refreshToken,
   logout,
-  forgotPassword,
-  resetPassword,
+  forgotPassword,        // <-- this must match the declared function name
+  resetPassword,         // <-- must match exactly
   me,
   updateProfile,
   changePassword,
@@ -514,6 +575,8 @@ module.exports = {
   dashboard,
   assignCourses,
   submitGrades,
+  submitGradesByIdAndName,
+  submitGradeById,
   getStudentsInCourse,
-  submitGradesByName
+  getMyCourses
 };

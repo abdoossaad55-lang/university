@@ -7,7 +7,6 @@ const fs = require('fs-extra');
 const professorController = require('../controllers/professorController');
 const professorAuth = require('../middlewares/professorAuth');
 const adminAuth = require('../middlewares/adminAuth');
-const Professor = require("../models/Professor");
 
 // Ensure upload directory exists
 const uploadDir = path.join(process.cwd(), 'uploads/professors');
@@ -16,7 +15,8 @@ fs.ensureDirSync(uploadDir);
 // Multer setup for avatar upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
+  filename: (req, file, cb) =>
+    `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
 });
 const upload = multer({ storage });
 
@@ -47,27 +47,11 @@ router.patch('/courses/assign', professorAuth, professorController.assignCourses
 // ------------------------------
 // COURSES & GRADES ROUTES
 // ------------------------------
-router.post('/grades', professorAuth, professorController.submitGrades);
-router.post('/courses/grades-by-name', professorAuth, professorController.submitGradesByName);
+router.post('/submitGrades', professorAuth, professorController.submitGrades); // by ID array
+router.post('/submitGradesByIdAndName', professorAuth, professorController.submitGradesByIdAndName); // by ID + Name
+router.post('/submitGradeById', professorAuth, professorController.submitGradeById); // single student
 router.post('/courses/students', professorAuth, professorController.getStudentsInCourse);
 router.get('/dashboard', professorAuth, professorController.dashboard);
-
-router.get("/courses", professorAuth, async (req, res) => {
-    try {
-        const professor = await Professor.findById(req.user.id)
-            .populate("courses", "name code description");
-
-        if (!professor) return res.status(404).json({ success: false, message: "Professor not found" });
-
-        res.json({
-            success: true,
-            message: "Courses fetched successfully",
-            data: professor.courses
-        });
-    } catch (err) {
-        console.error("Fetch professor courses error:", err);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
+router.get('/courses', professorAuth, professorController.getMyCourses);
 
 module.exports = router;
