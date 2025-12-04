@@ -1,25 +1,25 @@
-// ==============================
-// EXPORT
-module.exports = {
-  signup,
-  login,
-  refreshToken,
-  logout,
-  forgotPassword,
-  resetPassword,
-  me,
-  updateProfile,
-  changePassword,
-  removeProfessor,
-  listProfessors,
-  dashboard,
-  assignCourses,
-  submitGrades,       // batch grading by studentId array
-  submitGradeById,    // single grading by studentId
-  getStudentsInCourse,
-  getMyCourses,
-  submitGradesByIdAndName
-};
+// // ==============================
+// // EXPORT
+// module.exports = {
+//   signup,
+//   login,
+//   refreshToken,
+//   logout,
+//   forgotPassword,
+//   resetPassword,
+//   me,
+//   updateProfile,
+//   changePassword,
+//   removeProfessor,
+//   listProfessors,
+//   dashboard,
+//   assignCourses,
+//   submitGrades,       // batch grading by studentId array
+//   submitGradeById,    // single grading by studentId
+//   getStudentsInCourse,
+//   getMyCourses,
+//   submitGradesByIdAndName
+// };
 
 
 
@@ -33,7 +33,7 @@ const Course = require('../models/Course');
 const Student = require('../models/Student');
 
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/token');
-const { success, error } = require('../utils/response');
+const { success, error, profsuccess } = require('../utils/response');
 const sendEmail = require('../utils/sendEmail');
 
 const avatarBasePath = '/uploads/professors';
@@ -130,7 +130,13 @@ async function login(req, res) {
     const refreshToken = generateRefreshToken({ id: prof.id, role: "professor", email: prof.email });
     await prof.addRefreshToken(refreshToken);
 
-    success(res, { professor: prof, token: accessToken }, "Login successful");
+
+
+    profsuccess(res, {
+      message: "Login successful",
+      professor: prof,
+      token: accessToken
+    });
   } catch (err) {
     console.error("Login error:", err);
     return error(res, "Server error", 500);
