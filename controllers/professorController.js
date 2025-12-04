@@ -374,31 +374,65 @@ async function dashboard(req, res) {
 
 // ==============================
 // ASSIGN COURSES
+// ASSIGN COURSES
 async function assignCourses(req, res) {
   try {
     const { courseIds } = req.body;
-    if (!Array.isArray(courseIds)) return error(res, 'courseIds must be an array', 400);
+    if (!Array.isArray(courseIds)) return error(res, "courseIds must be an array", 400);
 
     const prof = await Professor.findById(req.user.id);
-    if (!prof) return error(res, 'Professor not found', 404);
+    if (!prof) return error(res, "Professor not found", 404);
 
-    prof.courses = Array.from(new Set([...(prof.courses || []), ...courseIds]));
+    // Convert prof.courses to string IDs for comparison
+    const existingCourses = prof.courses.map(id => id.toString());
+
+    // Find duplicates
+    const alreadyAssigned = courseIds.filter(id => existingCourses.includes(id));
+
+    // Find new ones to assign
+    const newCourses = courseIds.filter(id => !existingCourses.includes(id));
+
+    // If all courses are already assigned → return message
+    if (newCourses.length === 0) {
+      return success(res, {
+        assignedBefore: alreadyAssigned
+      }, "All selected courses are already assigned to this professor");
+    }
+
+    // Add only new courses
+    prof.courses.push(...newCourses);
+    prof.courses = [...new Set(prof.courses)];
     await prof.save();
 
+    // Update course.professors list
+    await Course.updateMany(
+      { _id: { $in: newCourses } },
+      { $addToSet: { professors: prof._id } }
+    );
 
-    await Course.updateMany({ _id: { $in: courseIds } }, { $addToSet: { professors: prof._id } });
-    
-    const courses = await Course.find({ _id: { $in: courseIds } });
-    await Promise.all(courses.map(c =>
-      Student.updateMany({ _id: { $in: c.students } }, { $addToSet: { professors: prof._id } })
-    ));
+    // Update student.professors list
+    const courses = await Course.find({ _id: { $in: newCourses } });
+    await Promise.all(
+      courses.map(c =>
+        Student.updateMany(
+          { _id: { $in: c.students } },
+          { $addToSet: { professors: prof._id } }
+        )
+      )
+    );
 
-    success(res, { assignedCourses: courseIds }, 'Courses assigned successfully');
+    // Response
+    return success(res, {
+      newlyAssigned: newCourses,
+      alreadyAssigned
+    }, "Courses assigned successfully");
+
   } catch (err) {
-    console.error('Assign courses error', err);
-    error(res, 'Server error', 500);
+    console.error("Assign courses error", err);
+    return error(res, "Server error", 500);
   }
 }
+
 
 // ==============================
 // SUBMIT GRADES (Batch by studentId array)
