@@ -52,18 +52,17 @@ function createProfessorId(name) {
 const signupSchema = Joi.object({
   name: Joi.string().min(2).required(),
   email: Joi.string().email().required(),
-  password: Joi.string().min(8).required(),
-  confirm_password: Joi.any().valid(Joi.ref('password')).required(),
-  title: Joi.string().valid('Dr.', 'Prof.', 'Eng.').required(),
-  departments: Joi.array().items(Joi.string()).default([]),
-  courses: Joi.array().items(Joi.string()).default([])
+  password: Joi.string().min(8).required()
+  // confirm_password: Joi.any().valid(Joi.ref('password')).required(),
+  // title: Joi.string().valid('Dr.', 'Prof.', 'Eng.').required(),
+  // departments: Joi.array().items(Joi.string()).default([]),
+  // courses: Joi.array().items(Joi.string()).default([])
 });
 
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().required()
 });
-
 // ==============================
 // SIGNUP
 async function signup(req, res) {
