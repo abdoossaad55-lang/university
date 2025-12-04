@@ -19,7 +19,10 @@ const studentAuth = require("../middlewares/studentAuth");
 // 1️⃣ Professor: Create Assignment
 const professorStorage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const uploadDir = path.join("uploads/assignments", req.body.courseId);
+        const courseId = req.query.courseId; // <-- use query param now
+        if (!courseId) return cb(new Error("courseId query parameter is required"));
+
+        const uploadDir = path.join("uploads/assignments", courseId);
         await fs.ensureDir(uploadDir);
         cb(null, uploadDir);
     },
@@ -39,12 +42,11 @@ const professorUpload = multer({
         cb(null, true);
     }
 });
-
 // 2️⃣ Student: Submit Assignment
 const studentStorage = multer.diskStorage({
     destination: async (req, file, cb) => {
         try {
-            const { assignmentId } = req.body;
+            const { assignmentId } = req.body; // <-- read from form-data
             if (!assignmentId) return cb(new Error("assignmentId is required"));
 
             const assignment = await Assignment.findById(assignmentId).populate("course");
@@ -74,12 +76,17 @@ const studentUpload = multer({
     }
 });
 
+
 // ------------------------------
 // CREATE ASSIGNMENT (PROFESSOR)
 // ------------------------------
 router.post("/create", professorAuth, professorUpload.single("file"), async (req, res) => {
     try {
-        const { title, description, deadline, courseId } = req.body;
+        const { title, description, deadline } = req.body;
+        const courseId = req.query.courseId; // <-- read query param
+
+        if (!courseId || !title || !deadline)
+            return res.status(400).json({ success: false, message: "courseId, title, and deadline are required" });
 
         const course = await Course.findById(courseId).populate("students");
         if (!course) return res.status(404).json({ success: false, message: "Course not found" });
@@ -108,37 +115,17 @@ router.post("/create", professorAuth, professorUpload.single("file"), async (req
 
         res.status(201).json({ success: true, message: "Assignment created", data: assignment });
     } catch (err) {
-        console.error(err);
+        console.error("Create assignment error:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
-
-// ------------------------------
-// LIST ASSIGNMENTS
-// ------------------------------
-router.post("/list", async (req, res) => {
-    try {
-        const { courseId } = req.body;
-        if (!courseId) return res.status(400).json({ success: false, message: "courseId is required" });
-
-        const assignments = await Assignment.find({ course: courseId })
-            .sort({ deadline: 1 })
-            .populate("professor", "name email");
-
-        res.json({ success: true, message: "Assignments fetched", data: assignments });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
 // ------------------------------
 // SUBMIT ASSIGNMENT (STUDENT)
 // ------------------------------
 router.post("/submit", studentAuth, studentUpload.single("file"), async (req, res) => {
     try {
-        const { assignmentId } = req.body;
-        if (!assignmentId) return res.status(400).json({ success: false, message: "assignmentId required" });
+        const assignmentId = req.query.assignmentId; // <-- use query param now
+        if (!assignmentId) return res.status(400).json({ success: false, message: "assignmentId query parameter is required" });
 
         const assignment = await Assignment.findById(assignmentId).populate("course");
         if (!assignment) return res.status(404).json({ success: false, message: "Assignment not found" });
@@ -146,9 +133,11 @@ router.post("/submit", studentAuth, studentUpload.single("file"), async (req, re
         if (!assignment.course.students.includes(req.user.id))
             return res.status(403).json({ success: false, message: "You are not enrolled in this course" });
 
+        if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
         const submission = {
             student: req.user.id,
-            file: req.file ? `/uploads/assignments/${assignment.course._id}/${req.file.filename}` : null,
+            file: `/uploads/assignments/${assignment.course._id}/${req.file.filename}`,
             submitted_at: new Date()
         };
 
@@ -163,12 +152,13 @@ router.post("/submit", studentAuth, studentUpload.single("file"), async (req, re
             `Student submitted assignment "${assignment.title}"`
         );
 
-        res.json({ success: true, message: "Assignment submitted successfully" });
+        res.json({ success: true, message: "Assignment submitted successfully", data: submission });
     } catch (err) {
-        console.error(err);
+        console.error("Submit assignment error:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
+
 
 // ------------------------------
 // LIST SUBMISSIONS (PROFESSOR)
