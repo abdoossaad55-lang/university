@@ -45,7 +45,11 @@ app.use(cors({
 
 // Static uploads
 // app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads')));
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+
 
 // Routes
 app.use('/api/students', studentRoutes);
