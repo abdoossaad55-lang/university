@@ -40,7 +40,7 @@ router.get('/grades', studentAuth, studentController.getGrades);
 router.get('/dashboard', studentAuth, studentController.dashboard);
 
 // Admin Only
-router.get('/', adminAuth, studentController.listStudents);
+router.get('/', studentController.listStudents);
 router.delete('/:id', adminAuth, studentController.removeStudent);
 
 router.get("/courses", studentAuth, async (req, res) => {
