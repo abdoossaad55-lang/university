@@ -13,15 +13,20 @@ function avatarUploader(options = {}) {
   ensureDir(avatarDir);
 
   const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, avatarDir);
-    },
-    filename: function (req, file, cb) {
-      const ext = path.extname(file.originalname).toLowerCase();
-      const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-      cb(null, name);
-    }
-  });
+  destination: async (req, file, cb) => {
+    // courseId might be in req.body if you parse fields first
+    const courseId = req.body.courseId;
+    if (!courseId) return cb(new Error("courseId is required"), null);
+
+    const uploadDir = path.join("uploads/slides", courseId);
+    await fs.ensureDir(uploadDir);
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  }
+});
 
   const fileFilter = (req, file, cb) => {
     // validate by mimetype first

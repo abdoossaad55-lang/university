@@ -36,11 +36,10 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:5000'
 ];
 
+// const cors = require("cors");
+
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: "http://localhost:3000", // your frontend
   credentials: true
 }));
 
