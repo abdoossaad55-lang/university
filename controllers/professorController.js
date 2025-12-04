@@ -89,13 +89,13 @@ async function signup(req, res) {
     });
 
     // Assign professor to courses and students
-    if (courses.length > 0) {
-      await Course.updateMany({ _id: { $in: courses } }, { $addToSet: { professors: prof._id } });
-      const courseDocs = await Course.find({ _id: { $in: courses } });
-      await Promise.all(courseDocs.map(c =>
-        Student.updateMany({ _id: { $in: c.students } }, { $addToSet: { professors: prof._id } })
-      ));
-    }
+    // if (courses.length > 0) {
+    //   await Course.updateMany({ _id: { $in: courses } }, { $addToSet: { professors: prof._id } });
+    //   const courseDocs = await Course.find({ _id: { $in: courses } });
+    //   await Promise.all(courseDocs.map(c =>
+    //     Student.updateMany({ _id: { $in: c.students } }, { $addToSet: { professors: prof._id } })
+    //   ));
+    // }
 
     const accessToken = generateAccessToken({ id: prof._id.toString(), role: 'professor', email: prof.email });
     const refreshToken = generateRefreshToken({ id: prof._id.toString(), role: 'professor', email: prof.email });
