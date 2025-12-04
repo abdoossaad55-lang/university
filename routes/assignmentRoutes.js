@@ -11,6 +11,7 @@ const sendNotification = require("../utils/sendNotification");
 
 const professorAuth = require("../middlewares/professorAuth");
 const studentAuth = require("../middlewares/studentAuth");
+const Professor = require("../models/Professor");
 
 // ------------------------------
 // Multer Setup
@@ -78,47 +79,55 @@ const studentUpload = multer({
 
 
 // ------------------------------
-// CREATE ASSIGNMENT (PROFESSOR)
+// UPLOAD ASSIGNMENT (PROFESSOR)
 // ------------------------------
-router.post("/create", professorAuth, professorUpload.single("file"), async (req, res) => {
+router.post("/upload", professorAuth, professorUpload.single("file"), async (req, res) => {
     try {
         const { title, description, deadline } = req.body;
-        const courseId = req.query.courseId; // <-- read query param
+        const courseId = req.query.courseId;
 
+        // ✅ Validate file and required fields
+        if (!req.file) 
+            return res.status(400).json({ success: false, message: "No file uploaded" });
         if (!courseId || !title || !deadline)
             return res.status(400).json({ success: false, message: "courseId, title, and deadline are required" });
 
-        const course = await Course.findById(courseId).populate("students");
-        if (!course) return res.status(404).json({ success: false, message: "Course not found" });
+        // ✅ Check professor
+        const professor = await Professor.findById(req.user.id);
+        if (!professor) return res.status(404).json({ success: false, message: "Professor not found" });
 
-        if (!course.professors.includes(req.user.id))
+        if (!professor.courses.includes(courseId))
             return res.status(403).json({ success: false, message: "You do NOT teach this course" });
 
+        // ✅ Create assignment
         const assignment = await Assignment.create({
+            course: courseId,
+            professor: req.user.id,
             title,
             description,
             deadline,
-            file: req.file ? `/uploads/assignments/${courseId}/${req.file.filename}` : null,
-            course: courseId,
-            professor: req.user.id
+            file: `/uploads/assignments/${courseId}/${req.file.filename}`,
+            submissions: []
         });
 
-        // Notify students
+        // ✅ Notify students
+        const course = await Course.findById(courseId).populate("students");
         for (const student of course.students) {
             await sendNotification(
                 student._id,
                 "Student",
                 "New Assignment",
-                `A new assignment "${title}" was uploaded for course ${course.name}`
+                `New assignment uploaded: ${title}`
             );
         }
 
-        res.status(201).json({ success: true, message: "Assignment created", data: assignment });
+        res.status(201).json({ success: true, message: "Assignment uploaded successfully", data: assignment });
     } catch (err) {
-        console.error("Create assignment error:", err);
+        console.error("Upload assignment error:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
+
 // ------------------------------
 // SUBMIT ASSIGNMENT (STUDENT)
 // ------------------------------
