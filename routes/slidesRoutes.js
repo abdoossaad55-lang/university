@@ -15,9 +15,25 @@ const studentAuth = require("../middlewares/studentAuth");
 // ------------------------------
 // Multer storage
 // ------------------------------
+// const storage = multer.diskStorage({
+//     destination: async (req, file, cb) => {
+//         const courseId = req.body.courseId;
+//         const uploadDir = path.join("uploads/slides", courseId);
+//         await fs.ensureDir(uploadDir);
+//         cb(null, uploadDir);
+//     },
+//     filename: (req, file, cb) => {
+//         const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+//         cb(null, uniqueName);
+//     }
+// });
+
+
 const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const courseId = req.body.courseId;
+        const courseId = req.query.courseId; // <-- use query
+        if (!courseId) return cb(new Error("courseId is required"));
+
         const uploadDir = path.join("uploads/slides", courseId);
         await fs.ensureDir(uploadDir);
         cb(null, uploadDir);
@@ -27,6 +43,7 @@ const storage = multer.diskStorage({
         cb(null, uniqueName);
     }
 });
+
 
 const upload = multer({
     storage,
@@ -44,7 +61,9 @@ const upload = multer({
 // ------------------------------
 router.post("/upload", professorAuth, upload.single("file"), async (req, res) => {
     try {
-        const { courseId, title } = req.body;
+        const { title } = req.body;
+        const courseId = req.query.courseId;
+
         if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
         if (!courseId || !title) return res.status(400).json({ success: false, message: "courseId and title are required" });
 
