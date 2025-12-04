@@ -70,7 +70,7 @@ async function signup(req, res) {
     const { error: vErr } = signupSchema.validate(req.body);
     if (vErr) return error(res, vErr.details[0].message, 400);
 
-    const { name, email, password, title, departments, courses } = req.body;
+    const { name, email, password } = req.body;
 
     const exists = await Professor.findOne({ email: email.toLowerCase() });
     if (exists) return error(res, 'Email already registered', 400);
@@ -80,12 +80,12 @@ async function signup(req, res) {
     const prof = await Professor.create({
       name,
       email: email.toLowerCase(),
-      password,
-      title,
-      departments,
-      courses,
-      professor_id: professorId,
-      avatar: req.file ? `${avatarBasePath}/${req.file.filename}` : null
+      password
+      // title,
+      // departments,
+      // courses,
+      // professor_id: professorId,
+      // avatar: req.file ? `${avatarBasePath}/${req.file.filename}` : null
     });
 
     // Assign professor to courses and students
