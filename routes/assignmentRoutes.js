@@ -133,13 +133,21 @@ router.post("/upload", professorAuth, professorUpload.single("file"), async (req
 // ------------------------------
 router.post("/submit", studentAuth, studentUpload.single("file"), async (req, res) => {
     try {
-        const assignmentId = req.query.assignmentId; // <-- use query param now
-        if (!assignmentId) return res.status(400).json({ success: false, message: "assignmentId query parameter is required" });
+        const { assignmentId } = req.body; // <-- read from body
+        if (!assignmentId) 
+            return res.status(400).json({ success: false, message: "assignmentId is required in body" });
 
-        const assignment = await Assignment.findById(assignmentId).populate("course");
+        const assignment = await Assignment.findById(assignmentId).populate({
+            path: "course",
+            select: "name code students"
+        });
         if (!assignment) return res.status(404).json({ success: false, message: "Assignment not found" });
 
-        if (!assignment.course.students.includes(req.user.id))
+        // Compare as strings
+        const isEnrolled = assignment.course.students.some(
+            student => student.toString() === req.user.id
+        );
+        if (!isEnrolled)
             return res.status(403).json({ success: false, message: "You are not enrolled in this course" });
 
         if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
@@ -166,6 +174,43 @@ router.post("/submit", studentAuth, studentUpload.single("file"), async (req, re
         console.error("Submit assignment error:", err);
         res.status(500).json({ success: false, message: err.message });
     }
+});
+
+
+// LIST ASSIGNMENTS FOR STUDENT (SPECIFIC COURSE)
+// ------------------------------
+router.post("/list", studentAuth, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { courseId } = req.body;
+
+    if (!courseId)
+      return res.status(400).json({ success: false, message: "courseId is required in body" });
+
+    // Check if course exists
+    const course = await Course.findById(courseId).populate("students");
+    if (!course)
+      return res.status(404).json({ success: false, message: "Course not found" });
+
+    // Check if student is enrolled
+    if (!course.students.some(s => s._id.toString() === studentId))
+      return res.status(403).json({ success: false, message: "You are not enrolled in this course" });
+
+    // Fetch assignments for this course, excluding submissions
+    const assignmentsRaw = await Assignment.find({ course: courseId })
+      .sort({ deadline: 1 })
+      .select("-submissions") // ❌ Exclude submissions
+      .populate("professor", "full_name email"); // Include only needed professor info
+
+    res.json({
+      success: true,
+      message: "Assignments fetched successfully",
+      data: assignmentsRaw
+    });
+  } catch (err) {
+    console.error("Fetch student assignments error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 
