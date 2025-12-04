@@ -1,7 +1,7 @@
 // utils/token.js
 const jwt = require('jsonwebtoken');
 
-const ACCESS_EXPIRES = process.env.ACCESS_EXPIRES || '15m';
+const ACCESS_EXPIRES = process.env.ACCESS_EXPIRES || '60m';
 const REFRESH_EXPIRES = process.env.REFRESH_EXPIRES || '7d';
 
 // ensure secrets exist (fail fast)
