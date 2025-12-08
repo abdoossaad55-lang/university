@@ -22,4 +22,17 @@ router.get("/course/admin", adminAuth, attendanceController.getAttendanceByCours
 // ----------------------
 router.get("/me", studentAuth, attendanceController.getStudentAttendance);
 
+
+// ================================
+// GET STUDENTS ENROLLED IN A COURSE
+// ================================
+router.post("/students", professorAuth, attendanceController.getStudentsByCourse);
+
+
+// =======================================================
+// PROFESSOR: GET FULL ATTENDANCE REPORT FOR A COURSE
+// =======================================================
+router.post("/report", professorAuth, attendanceController.getCourseAttendanceReport);
+
+
 module.exports = router;

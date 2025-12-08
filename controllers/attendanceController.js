@@ -6,42 +6,51 @@ const Student = require("../models/Student");
 // ----------------------
 // PROFESSOR: MARK ATTENDANCE
 // ----------------------
-// ----------------------
-// PROFESSOR: MARK ATTENDANCE (with student_name validation)
-// ----------------------
 exports.markAttendance = async (req, res) => {
   try {
     const { courseId, date, attendanceList } = req.body;
 
-    if (!courseId || !date || !attendanceList || !Array.isArray(attendanceList))
-      return res.status(400).json({ success: false, message: "courseId, date, and attendanceList are required" });
+    if (!courseId || !date || !attendanceList || !Array.isArray(attendanceList)) {
+      return res.status(400).json({
+        success: false,
+        message: "courseId, date, attendanceList are required"
+      });
+    }
 
-    const course = await Course.findById(courseId).populate("students", "_id full_name");
+    const course = await Course.findById(courseId)
+      .populate("students", "_id full_name")
+      .populate("professors", "_id");
+
     if (!course) return res.status(404).json({ success: false, message: "Course not found" });
 
-    // Check professor teaches the course
-    if (!course.professors.includes(req.user.id))
+    // ensure professor teaches course
+    if (!course.professors.map(p => p._id.toString()).includes(req.user.id)) {
       return res.status(403).json({ success: false, message: "You are not assigned to this course" });
+    }
+
+    // 🔥 increase number of lectures
+    course.totalLectures += 1;
+    await course.save();
 
     const invalidStudents = [];
     const bulkOps = [];
 
     for (const { studentId, student_name, status } of attendanceList) {
-      if (!studentId || !student_name || !status) {
-        invalidStudents.push({ studentId, student_name, reason: "Missing required field" });
-        continue;
-      }
 
-      // Validate student exists in the course
       const student = course.students.find(
         s => s._id.toString() === studentId && s.full_name.toLowerCase() === student_name.toLowerCase()
       );
 
       if (!student) {
-        invalidStudents.push({ studentId, student_name, reason: "Student not enrolled in course or name mismatch" });
+        invalidStudents.push({
+          studentId,
+          student_name,
+          reason: "Student not in course or name mismatch"
+        });
         continue;
       }
 
+      // 🔥 Store attendance record
       bulkOps.push({
         updateOne: {
           filter: { course: courseId, student: studentId, date },
@@ -49,18 +58,36 @@ exports.markAttendance = async (req, res) => {
           upsert: true
         }
       });
+
+      // 🔥 Update student attendance stats
+      const stu = await Student.findById(studentId);
+
+      const stats = stu.attendanceStats.get(courseId) || {
+        present: 0,
+        absent: 0,
+        percentage: 0
+      };
+
+      if (status === "Present") stats.present++;
+      else stats.absent++;
+
+      // Recalculate %
+      const total = stats.present + stats.absent;
+      stats.percentage = total > 0 ? (stats.present / total) * 100 : 0;
+
+      stu.attendanceStats.set(courseId, stats);
+      await stu.save();
     }
 
-    if (bulkOps.length > 0) {
-      await Attendance.bulkWrite(bulkOps);
-    }
+    if (bulkOps.length > 0) await Attendance.bulkWrite(bulkOps);
 
     res.json({
       success: true,
-      message: "Attendance recorded successfully",
-      processed: bulkOps.length,
+      message: "Attendance recorded & statistics updated",
+      processedStudents: bulkOps.length,
       invalidStudents
     });
+
   } catch (err) {
     console.error("markAttendance error:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -132,3 +159,125 @@ exports.getStudentAttendance = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
+
+
+// ================================
+// GET STUDENTS ENROLLED IN A COURSE
+// ================================
+exports.getStudentsByCourse = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: "courseId is required"
+      });
+    }
+
+    // Find course and populate students
+    const course = await Course.findById(courseId)
+      .populate("students", "_id full_name email student_id");
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      students: course.students
+    });
+
+  } catch (err) {
+    console.error("getStudentsByCourse error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+// =======================================================
+// PROFESSOR: GET FULL ATTENDANCE REPORT FOR A COURSE
+// =======================================================
+exports.getCourseAttendanceReport = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "courseId is required" 
+      });
+    }
+
+    const course = await Course.findById(courseId)
+      .populate("students", "_id full_name attendanceStats")
+      .populate("professors", "_id");
+
+    if (!course) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Course not found" 
+      });
+    }
+
+    // Ensure professor teaches this course
+    if (!course.professors.map(p => p._id.toString()).includes(req.user.id)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not assigned to this course"
+      });
+    }
+
+    // Find last attendance date for each student
+    const records = await Attendance.find({ course: courseId })
+      .sort({ date: -1 })
+      .lean();
+
+    // Build a map of studentId → lastDate
+    const lastDates = {};
+    for (const rec of records) {
+      if (!lastDates[rec.student]) {
+        lastDates[rec.student] = rec.date;
+      }
+    }
+
+    // Build final report
+    const report = course.students.map(stu => {
+      const stats = stu.attendanceStats?.get(courseId.toString()) || {
+        present: 0,
+        absent: 0,
+        percentage: 0
+      };
+
+      return {
+        studentId: stu._id,
+        name: stu.full_name,
+        present: stats.present,
+        absent: stats.absent,
+        percentage: stats.percentage.toFixed(2),
+        lastAttendance: lastDates[stu._id] || null
+      };
+    });
+
+    res.json({
+      success: true,
+      totalStudents: report.length,
+      totalLectures: course.totalLectures,
+      report
+    });
+
+  } catch (err) {
+    console.error("getCourseAttendanceReport error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: err.message 
+    });
+  }
+};
+
+
+

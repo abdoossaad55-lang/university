@@ -34,6 +34,15 @@ const StudentSchema = new mongoose.Schema({
     trim: true,
     match: [/^\+?[0-9]{10,15}$/, 'Please enter a valid phone number'],
   },
+  attendanceStats: {
+  type: Map,
+  of: {
+    present: { type: Number, default: 0 },
+    absent: { type: Number, default: 0 },
+    percentage: { type: Number, default: 0 }
+  },
+  default: {}
+  },
   gender: {
     type: String,
     enum: ['Male', 'Female', 'Other']

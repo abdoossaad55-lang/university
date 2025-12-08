@@ -20,6 +20,8 @@ const assignmentRoutes = require('./routes/assignmentRoutes');
 const slidesRoutes = require('./routes/slidesRoutes');
 const notificationsRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const studentAttendanceRoutes = require('./routes/studentAttendanceRoutes');
+
 
 const app = express();
 
@@ -61,9 +63,11 @@ app.use('/api/assistants', assistantRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/records', academicRecordRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use("/api/studentattendance", studentAttendanceRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/slides', slidesRoutes);
 app.use("/api/notifications", notificationsRoutes);
+
 
 // Health check
 app.get('/', (req, res) => res.send('Faculty Management API running ✅'));

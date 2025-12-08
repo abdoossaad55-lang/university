@@ -10,6 +10,7 @@ const CourseSchema = new mongoose.Schema({
     professors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Professor' }],
     assistants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Assistant' }],
     students: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Student' }],
+    totalLectures: { type: Number, default: 0 },
     assignments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Assignment" }] ,
     // Add this ↓ for grades
     grades: [
