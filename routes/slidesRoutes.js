@@ -117,4 +117,33 @@ router.post("/list", studentAuth, async (req, res) => {
     }
 });
 
+
+// ------------------------------
+// GET SLIDES BY COURSE ID (PROFESSOR)
+// ------------------------------
+router.post("/professor/slides/course", professorAuth, async (req, res) => {
+    try {
+        const { courseId } = req.body;
+        if (!courseId) return res.status(400).json({ success: false, message: "courseId is required" });
+
+        const professorId = req.user.id;
+
+        const slides = await LectureSlides.find({
+            course: courseId,
+            professor: professorId
+        })
+        .sort({ uploadedAt: -1 });
+
+        res.json({
+            success: true,
+            message: "Slides fetched successfully",
+            data: slides
+        });
+    } catch (err) {
+        console.error("Fetch slides by course error:", err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
 module.exports = router;

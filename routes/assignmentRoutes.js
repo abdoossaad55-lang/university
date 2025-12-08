@@ -298,4 +298,35 @@ router.get("/professor/assignments", professorAuth, async (req, res) => {
     }
 }); 
 
+
+// ------------------------------
+// GET ASSIGNMENTS BY COURSE ID (PROFESSOR)
+// ------------------------------
+router.post("/professor/assignments/course", professorAuth, async (req, res) => {
+    try {
+        const { courseId } = req.body;
+        if (!courseId) return res.status(400).json({ success: false, message: "courseId is required" });
+
+        const professorId = req.user.id;
+
+        const assignments = await Assignment.find({
+            course: courseId,
+            professor: professorId
+        })
+        .sort({ deadline: 1 })
+        .populate("course", "name code");
+
+        res.json({
+            success: true,
+            message: "Assignments fetched successfully",
+            data: assignments
+        });
+    } catch (err) {
+        console.error("Fetch assignments by course error:", err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+
 module.exports = router;
