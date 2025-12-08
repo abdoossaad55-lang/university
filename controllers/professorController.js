@@ -132,9 +132,17 @@ async function login(req, res) {
 
 
 
+    const formattedProfessor = {
+      id: prof.id,
+      name: prof.name,
+      email: prof.email,
+      departments: prof.departments?.map(d => d._id),
+      courses: prof.courses?.map(c => c._id)
+    };
+
     profsuccess(res, {
       message: "Login successful",
-      professor: prof,
+      professor: formattedProfessor,
       token: accessToken
     });
   } catch (err) {
