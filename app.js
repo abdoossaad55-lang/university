@@ -63,7 +63,7 @@ app.use('/api/assistants', assistantRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/records', academicRecordRoutes);
 app.use('/api/attendance', attendanceRoutes);
-app.use("/api/studentattendance", studentAttendanceRoutes);
+app.use("/api/attendance", studentAttendanceRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/slides', slidesRoutes);
 app.use("/api/notifications", notificationsRoutes);

@@ -3,6 +3,8 @@ const router = express.Router();
 const studentAuth = require("../middlewares/studentAuth");
 const studentController = require("../controllers/studentAttendanceController");
 
+
+console.log("dsflkjdsbhfjsd")
 // Dashboard summary
 router.get("/me/summary", studentAuth, studentController.getMyAttendanceSummary);
 

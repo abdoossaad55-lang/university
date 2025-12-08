@@ -6,6 +6,8 @@ const Student = require("../models/Student");
 // GET attendance summary for all courses (dashboard)
 // =======================================================
 exports.getMyAttendanceSummary = async (req, res) => {
+console.log("dsflkjdsbhfjsd")
+
   try {
     const studentId = req.user.id;
 
